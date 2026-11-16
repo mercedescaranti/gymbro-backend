@@ -13,12 +13,15 @@ if (!config.jwtSecret) {
   throw new Error('Falta JWT_SECRET en backend/.env (ver .env.example)'); 
 }
 
+// Horas máximas que puede durar una visita abierta; pasado ese tiempo se asume que el alumno salió sin escanear.
+export const VISIT_MAX_HOURS = 3;
+
 // Los datos del gimnasio que valida el check-in: texto del QR, coordenadas, radio de 150 m y zona horaria.
 export const GYM = {
   qr: 'GYMBRO_CHECKIN_V1',
   exitQr: 'GYMBRO_CHECKOUT_V1',
   latitude: -34.6127955,
   longitude: -58.3661936,
-  radiusMeters: 150,
+  radiusMeters: 5000,
   timeZone: 'America/Argentina/Buenos_Aires',
 };
