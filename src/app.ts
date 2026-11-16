@@ -25,6 +25,7 @@ app.use(cors()); //
 
 //  convierte el body JSON en un objeto en req.body. Sin esto, req.body llega vacío.
 // Va antes de las rutas porque las rutas leen req.body, que solo existe después de que ese middleware interpretó el JSON.
+// 	Sin esto req.body sería undefined. Si el JSON está mal formado, genera un error que atrapa el manejador del final
 app.use(express.json());
 
 

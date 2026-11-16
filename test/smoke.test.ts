@@ -4,6 +4,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import '../src/env';
+import { prisma } from '../src/db';
+import { cerrarVisitasVencidas } from '../src/visits';
+
 const BASE = process.env.API_URL ?? 'http://localhost:3000';
 const GYM = { latitude: -34.6127955, longitude: -58.3661936 };
 const PASSWORD = 'gymbro123';
@@ -228,6 +232,96 @@ describe('API de Gymbro', () => {
         body: { qr: 'GYMBRO_CHECKOUT_V1', ...GYM },
       });
       assert.equal(duplicateExit.status, 409);
+    });
+
+    const HOUR = 3600_000;
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR);
+
+    // Crea visitas de prueba, corre el cuerpo y las borra siempre al final.
+    async function withVisits(
+      visits: { userId: number; enteredAt: Date; exitedAt?: Date }[],
+      body: (ids: number[]) => Promise<void>
+    ) {
+      const created = await Promise.all(visits.map((data) => prisma.gymVisit.create({ data })));
+      try {
+        await body(created.map((visit) => visit.id));
+      } finally {
+        await prisma.gymVisit.deleteMany({ where: { userId: { in: visits.map((v) => v.userId) } } });
+      }
+    }
+    const reload = (id: number) => prisma.gymVisit.findUniqueOrThrow({ where: { id } });
+
+    it('cierra visitas de más de 3 h con exitedAt = enteredAt + 3h', async () => {
+      const enteredAt = hoursAgo(4);
+      await withVisits([{ userId: studentId, enteredAt }], async ([id]) => {
+        await cerrarVisitasVencidas();
+        assert.equal((await reload(id)).exitedAt?.getTime(), enteredAt.getTime() + 3 * HOUR);
+      });
+    });
+
+    it('no toca visitas de menos de 3 h', async () => {
+      await withVisits([{ userId: studentId, enteredAt: hoursAgo(2.98) }], async ([id]) => {
+        await cerrarVisitasVencidas();
+        assert.equal((await reload(id)).exitedAt, null);
+      });
+    });
+
+    it('no pisa una salida real', async () => {
+      const exitedAt = hoursAgo(4);
+      await withVisits([{ userId: studentId, enteredAt: hoursAgo(5), exitedAt }], async ([id]) => {
+        await cerrarVisitasVencidas();
+        assert.equal((await reload(id)).exitedAt?.getTime(), exitedAt.getTime());
+      });
+    });
+
+    it('cierra varias visitas de distintos alumnos, cada una con su hora', async () => {
+      const other = await prisma.user.findFirstOrThrow({ where: { role: 'ALUMNO', id: { not: studentId } } });
+      const a = hoursAgo(4);
+      const b = hoursAgo(10);
+      await withVisits(
+        [
+          { userId: studentId, enteredAt: a },
+          { userId: other.id, enteredAt: b },
+        ],
+        async ([idA, idB]) => {
+          await cerrarVisitasVencidas();
+          assert.equal((await reload(idA)).exitedAt?.getTime(), a.getTime() + 3 * HOUR);
+          assert.equal((await reload(idB)).exitedAt?.getTime(), b.getTime() + 3 * HOUR);
+        }
+      );
+    });
+
+    it('un alumno con visita vencida ya no figura activo', async () => {
+      await withVisits([{ userId: studentId, enteredAt: hoursAgo(4) }], async () => {
+        const active = await api('/api/alumnos/activos', { token: trainerToken });
+        assert.equal(active.status, 200);
+        assert.ok(!active.body.users.some((user: any) => user.id === studentId));
+      });
+    });
+
+    it('permite una nueva entrada si la visita anterior venció', async () => {
+      await withVisits([{ userId: studentId, enteredAt: hoursAgo(4) }], async () => {
+        const entry = await api('/api/checkins/entrada', {
+          method: 'POST',
+          token: studentToken,
+          body: { qr: 'GYMBRO_CHECKIN_V1', ...GYM },
+        });
+        assert.equal(entry.status, 201);
+      });
+    });
+
+    it('rechaza la salida tardía sin modificar la hora', async () => {
+      const enteredAt = hoursAgo(4);
+      await withVisits([{ userId: studentId, enteredAt }], async ([id]) => {
+        const exit = await api('/api/checkins/salida', {
+          method: 'POST',
+          token: studentToken,
+          body: { qr: 'GYMBRO_CHECKOUT_V1', ...GYM },
+        });
+        assert.equal(exit.status, 409);
+        assert.match(exit.body.error, /se cerró automáticamente/);
+        assert.equal((await reload(id)).exitedAt?.getTime(), enteredAt.getTime() + 3 * HOUR);
+      });
     });
 
     it('valida el QR y la ubicación para la entrada y la salida', async () => {

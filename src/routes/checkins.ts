@@ -2,10 +2,11 @@ import { Router, type Response } from 'express';
 
 import { getAuth } from '../auth';
 import { getCatalog } from '../catalog';
-import { GYM } from '../config';
+import { GYM, VISIT_MAX_HOURS } from '../config';
 import { prisma } from '../db';
 import { getDistanceInMeters, todayInTimeZone } from '../geo';
 import { toApiLog } from '../serializers';
+import { cerrarVisitasVencidas, tieneVisitaVencida } from '../visits';
 import { attendanceSchema, checkinSchema, firstIssue } from '../validation';
 
 // Solo alumnos (ver app.ts).
@@ -37,11 +38,13 @@ function validateAttendance(body: unknown, res: Response, expectedQr: string) {
   return parsed.data;
 }
 
+// Registra que el alumno entró al gimnasio
 checkinsRouter.post('/entrada', async (req, res) => {
   const input = validateAttendance(req.body, res, GYM.qr);
   if (!input) return;
 
   const { userId } = getAuth(res);
+  await cerrarVisitasVencidas();
   const openVisit = await prisma.gymVisit.findFirst({
     where: { userId, exitedAt: null },
     select: { id: true },
@@ -54,16 +57,25 @@ checkinsRouter.post('/entrada', async (req, res) => {
   res.status(201).json({ visit: { enteredAt: visit.enteredAt } });
 });
 
+// Registra que el alumno salió del gimnasio
 checkinsRouter.post('/salida', async (req, res) => {
   const input = validateAttendance(req.body, res, GYM.exitQr);
   if (!input) return;
 
   const { userId } = getAuth(res);
+  // Se consulta ANTES de cerrar, para poder avisar que la visita venció (no hay columna que lo marque).
+  const expired = await tieneVisitaVencida(userId);
+  await cerrarVisitasVencidas();
   const openVisit = await prisma.gymVisit.findFirst({
     where: { userId, exitedAt: null },
     orderBy: { enteredAt: 'desc' },
     select: { id: true },
   });
+  if (!openVisit && expired) {
+    return res
+      .status(409)
+      .json({ error: `Tu visita se cerró automáticamente a las ${VISIT_MAX_HOURS} horas.` });
+  }
   if (!openVisit) {
     return res.status(409).json({ error: 'No tenés una entrada abierta para registrar la salida.' });
   }

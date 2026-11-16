@@ -32,6 +32,7 @@ export const ROUTINE_INCLUDE = {
   },
 } satisfies Prisma.RoutineInclude;
 
+// RoutineWithTree y LogWithExercises: Son tipos que describen el resultado de una consulta con include
 // Una rutina con días, bloques e ítems (según ROUTINE_INCLUDE)
 type RoutineWithTree = Prisma.RoutineGetPayload<{ include: typeof ROUTINE_INCLUDE }>;
 

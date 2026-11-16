@@ -3,6 +3,7 @@ import { Router } from 'express';
 
 import { prisma } from '../db';
 import { ROUTINE_INCLUDE, toApiRoutine, toPublicUser } from '../serializers';
+import { cerrarVisitasVencidas } from '../visits';
 import { firstIssue, parseId, routineSchema, type ItemInput } from '../validation';
 
 // Todas estas rutas son solo para entrenadores (ver app.ts).
@@ -19,6 +20,7 @@ alumnosRouter.get('/', async (_req, res) => {
 
 // Lista solo a los alumnos con una entrada todavía abierta.
 alumnosRouter.get('/activos', async (_req, res) => {
+  await cerrarVisitasVencidas();
   const alumnos = await prisma.user.findMany({
     where: {
       role: 'ALUMNO',

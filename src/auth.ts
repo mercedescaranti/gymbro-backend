@@ -17,6 +17,7 @@ export function signToken(userId: number, role: Role): string {
 // Quién está haciendo el pedido (lo deja cargado requireAuth).
 export function getAuth(res: Response): AuthInfo {
   return res.locals.auth as AuthInfo;
+  // requireAuth deja en res.locals la identidad; las rutas la leen con getAuth(res).
 }
 
 // Middleware: exige "Authorization: Bearer <token>" válido.
@@ -50,6 +51,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   } catch {
     // Cualquier fallo (firma mala, vencido, mal formado) cae en el catch → 401 "La sesión expiró o no es válida". 
     res.status(401).json({ error: 'La sesión expiró o no es válida' });
+
+    // res.locals es un objeto vacío que Express crea en cada request, para guardar datos que solo importan durante esa request
   }
 }
 

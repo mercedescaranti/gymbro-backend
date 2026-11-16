@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 
 import '../src/env';
 import { prisma } from '../src/db';
+import { buildGymVisits } from './seed-data/gymVisits';
 import { routines } from './seed-data/routines';
 import { users } from './seed-data/users';
 import { workoutLogs } from './seed-data/workoutLogs';
@@ -101,8 +102,11 @@ async function main() {
     });
   }
 
+  const gymVisits = buildGymVisits();
+  await prisma.gymVisit.createMany({ data: gymVisits });
+
   console.log(
-    `Seed listo: ${users.length} usuarios, ${routines.length} rutinas, ${workoutLogs.length} registros.`
+    `Seed listo: ${users.length} usuarios, ${routines.length} rutinas, ${workoutLogs.length} registros, ${gymVisits.length} visitas.`
   );
 }
 
